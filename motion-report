@@ -1,0 +1,53 @@
+#!/bin/bash
+# Report on status of motions from the past 12 hours
+# Home assistant logbook has the data
+# Uses jq to format the JSON output
+HOST=homeassistant.local
+PORT=8123
+# Long-lived access token (create one at /profile/security)
+TOKEN="eyEXAMPLElonglivedtokenRE"
+ENTITYLISTFILE="/var/tmp/entitylist"
+# ENTITYLISTFILE looks like this (get entities from homeassistant developer tools, for example)
+#--------------------
+# binary_sensor.bedroom1_sensor_motion_detection
+# binary_sensor.bedroom1_closet_motion
+# binary_sensor.bedroom2_sensor_motion_detection
+# binary_sensor.dining_room_in_wall_motion_detection
+# binary_sensor.front_door_motion_detector_sensor_state_any
+# binary_sensor.front_room_motion
+# binary_sensor.garage_sensor_motion_detection
+# binary_sensor.office_motion_detection
+
+# Start 12 hours ago
+STARTDATE=$(date --date="-12 hours" +%Y-%m-%dT%T.%N%:z)
+# Read the list of entities (one per line)
+if [ -f ${ENTITYLISTFILE} ]
+then
+  ENTITYLIST=$(paste -d, -s ${ENTITYLISTFILE})
+else
+  ENTITYLIST="binary_sensor.bedroom1_sensor_motion_detection,binary_sensor.bedroom1_closet_motion,binary_sensor.bedroom2_sensor_motion_detection,binary_sensor.dining_room_in_wall_motion_detection"
+fi
+TZ="America/Chicago" curl -s -X GET \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-type: application/json" \
+https://${HOST}:${PORT}/api/logbook/${STARTDATE}?entity=${ENTITYLIST} \
+| jq -r '["State","Timestamp       ","Name"], ["----", "----------------------"  ,   "-----------------------------------------------"], (.[] | [.state, (.when | split(".") | .[0] | strptime("%Y-%m-%dT%H:%M:%S") | mktime - (6*60*60) | strftime("%F %X")), .name]) | @tsv'
+
+#
+# Sample output 
+# Subject: Motion report for Sun Apr 20 08:07:02 CDT 2025
+#
+# State   Timestamp               Name
+# ----    ----------------------  -----------------------------------------------
+# on      2025-04-19 20:35:19     Bedroom1 Motion Sensor Motion detection
+# on      2025-04-19 20:35:26     Front Room Motion
+# off     2025-04-19 20:35:30     Front Room Motion
+# on      2025-04-19 20:35:32     Kitchen Sensor Motion detection
+# off     2025-04-19 20:35:44     Kitchen Sensor Motion detection
+# off     2025-04-19 20:35:51     Bedroom1 Hallway Sensor Motion detection
+# on      2025-04-19 21:27:48     Bedroom1 Hallway Sensor Motion detection
+# on      2025-04-19 21:27:49     Front Room Motion
+# on      2025-04-19 21:27:50     Living Room 
+# off     2025-04-19 21:27:53     Front Room Motion
+# off     2025-04-19 21:27:54     Living Room Iaszone
+# 
